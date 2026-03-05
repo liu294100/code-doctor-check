@@ -1,6 +1,6 @@
 # Code Doctor Check — Kiro Skills 套件集合
 
-面向互联网券商开发团队的 Kiro AI Skills 集合，覆盖 Java 和 Python 两大技术栈，提供代码审查、开发指导、架构设计、打包部署等全方位 AI 辅助能力。
+面向开发的 Kiro AI Skills 集合，覆盖 Java 和 Python 两大技术栈，提供代码审查、开发指导、架构设计、打包部署等全方位 AI 辅助能力。
 
 ## 项目结构
 
