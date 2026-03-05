@@ -10,7 +10,8 @@
 │   ├── java-code-review.md     # Java 代码全面审查（自动触发）
 │   ├── sql-script-review.md    # SQL 脚本安全与性能审查（自动触发）
 │   ├── springboot-sql-review.md # Spring Boot 项目 SQL 审查（自动触发）
-│   └── merge-review.md         # Git 合并/PR 全面审查（手动触发）
+│   ├── merge-review.md         # Git 合并/PR 全面审查（手动触发）
+│   └── gitlab-mr-report.md    # GitLab MR 审查报告生成（手动触发）
 ├── 02-architecture/            # 架构设计审查
 │   ├── fintech-architecture.md # 互联网金融通用架构（CAP/性能/高可用）
 │   └── brokerage-architecture.md # 互联网券商整体架构
@@ -33,6 +34,7 @@
 | sql-script-review | 自动（打开 .sql 文件） | DDL 规范、索引设计、查询性能、SQL 注入、事务锁、数据安全，结合项目建表脚本交叉审查 |
 | springboot-sql-review | 自动（打开 Mapper/Repository/DAO） | MyBatis ${}注入检测、N+1 问题、JPA 事务陷阱、连接池配置、索引覆盖分析，结合项目 SQL 脚本交叉审查 |
 | merge-review | 手动 `#merge-review #Git Diff` | 合并前全面审查：变动统计、依赖分析、代码/SQL/设计/性能/安全多维度检查，输出综合评分和合并建议 |
+| gitlab-mr-report | 手动 `#gitlab-mr-report #Git Diff` | 生成 GitLab MR 标准化审查报告，可直接粘贴到 MR 评论区，含评分/问题清单/修复建议/合并结论 |
 
 ### 02 - 架构设计审查
 

@@ -418,5 +418,5 @@ SELECT * FROM t_order WHERE amount > 100 FOR UPDATE;
 1. SQL 质量评分（1-10）
 2. 索引覆盖率评估（查询是否都有合适的索引）
 3. 安全风险评估
-4. Top 3 优先修复项
+4. Top 5 优先修复项
 5. 建议补充的索引列表

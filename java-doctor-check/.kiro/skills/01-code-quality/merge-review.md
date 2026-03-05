@@ -311,7 +311,7 @@ restTemplate.setRequestFactory(new SimpleClientHttpRequestFactory() {{
 # 1. 是否有敏感信息明文（密码、密钥、token）
 # 2. 数据源配置是否合理（连接池参数）
 # 3. 超时配置是否合理（不要太长也不要太短）
-# 4. 日志级别是否合适（生产环境不要 DEBUG）
+# 4. 日志级别是否合适（生产环境要不要 DEBUG）
 # 5. 新增配置是否有默认值（防止缺失配置导致启动失败）
 # 6. 配置是否区分环境（dev/test/prod）
 ```
