@@ -1,0 +1,343 @@
+# Chief Trader X - GitLab CI/CD Pipeline
+# MR 自动代码审查（基于 Amazon Q Developer）
+
+stages:
+  - review
+
+mr-code-review:
+  stage: review
+  tags:
+    - amazon-q-dev
+  only:
+    - merge_requests
+  allow_failure: true
+  script:
+    - |
+      # 生成唯一ID
+      UNIQUE_ID=$(date +%s)_${CI_MERGE_REQUEST_IID}
+      DIFF_FILE="/tmp/${UNIQUE_ID}.diff"
+      
+      # 获取 MR 的源分支和目标分支
+      TARGET_BRANCH=${CI_MERGE_REQUEST_TARGET_BRANCH_NAME}
+      SOURCE_BRANCH=${CI_MERGE_REQUEST_SOURCE_BRANCH_NAME}
+      
+      echo "正在分析 MR #${CI_MERGE_REQUEST_IID}: ${SOURCE_BRANCH} -> ${TARGET_BRANCH}"
+      
+      # 获取目标分支的最新提交
+      git fetch origin ${TARGET_BRANCH}
+      
+      # 使用 CI 提供的 diff base SHA（更可靠）
+      if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA}" ]; then
+        echo "使用 CI_MERGE_REQUEST_DIFF_BASE_SHA: ${CI_MERGE_REQUEST_DIFF_BASE_SHA}"
+        git diff ${CI_MERGE_REQUEST_DIFF_BASE_SHA}..HEAD -- '**/*.java' '**/*.xml' '**/*.properties' '**/*.yml' '**/*.yaml' ':!target/**' ':!.idea/**' ':!*.iml' ':!.git/**' ':!logs/**' > ${DIFF_FILE}
+      else
+        echo "使用 origin/${TARGET_BRANCH} 作为基准"
+        git diff origin/${TARGET_BRANCH}..HEAD -- '**/*.java' '**/*.xml' '**/*.properties' '**/*.yml' '**/*.yaml' ':!target/**' ':!.idea/**' ':!*.iml' ':!.git/**' ':!logs/**' > ${DIFF_FILE}
+      fi
+      
+      # 检查 diff 文件是否为空
+      if [ ! -s ${DIFF_FILE} ]; then
+        echo "没有检测到 Java/配置文件的变更"
+        exit 0
+      fi
+      
+      echo "Diff 文件已生成: ${DIFF_FILE}"
+      
+      # 获取项目根目录的绝对路径
+      PROJECT_ROOT=$(pwd)
+      echo "项目根目录: ${PROJECT_ROOT}"
+      
+      # 设置最大执行时间（秒）和文件读取限制
+      MAX_TIMEOUT=${AI_REVIEW_TIMEOUT:-300}
+      MAX_FILES=${AI_REVIEW_MAX_FILES:-20}
+      MAX_DEPTH=${AI_REVIEW_MAX_DEPTH:-2}
+      
+      REVIEW_OUTPUT_RAW=$(timeout ${MAX_TIMEOUT}s sudo -i q chat --trust-all-tools --no-interactive "你是一位资深的 Java 后端代码审查专家，精通 Spring Boot、MyBatis-Plus、Dubbo、Kafka、Redis 等技术栈。
+
+      ═══════════════════════════════════════════
+      📌 项目信息
+      ═══════════════════════════════════════════
+      - 项目名称：Chief Trader X
+      - 构建工具：Maven 多模块
+      - 项目根目录：${PROJECT_ROOT}
+      - Git Diff 文件：${DIFF_FILE}
+      - 主要模块：xxx
+      - 技术栈：Spring Boot xxx + MyBatis-Plus + Dubbo + Nacos + Kafka + Redis + Caffeine
+
+      ═══════════════════════════════════════════
+      ⚠️ 重要限制（必须严格遵守）
+      ═══════════════════════════════════════════
+      - 最多只能读取 ${MAX_FILES} 个额外的项目文件（不包括 diff 文件本身）
+      - 依赖追踪深度限制为 ${MAX_DEPTH} 层（只追踪直接引用的文件，不要递归追踪）
+      - 优先读取最关键的文件：接口定义、Service 实现、Controller、Entity/DTO 类
+      - 如果达到文件数量限制，停止读取更多文件，基于已有信息完成审查
+      - 禁止读取 target、.idea、.git、logs、node_modules 目录下的文件
+      - 忽略 logger 相关的引用查询（如 log.info、log.debug、System.out.println 等日志相关代码），不需要追踪其定义和实现
+
+      ═══════════════════════════════════════════
+      📋 审查任务
+      ═══════════════════════════════════════════
+      1. 首先读取 ${DIFF_FILE} 了解本次变更内容
+      2. 根据 diff 内容，有选择性地读取最相关的项目文件（注意文件数量限制）
+      3. 优先级：接口定义 > Service 实现 > Controller > Entity/DTO > 配置文件 > 其他引用
+      4. 在达到限制前完成审查，不要因为限制而中断输出
+
+      ═══════════════════════════════════════════
+      🔍 审查维度（共 14 项，逐项检查，不可遗漏）
+      ═══════════════════════════════════════════
+
+      ── 1. 潜在 Bug 和运行时错误 ──
+      - 空指针异常（NullPointerException）风险：方法返回值未判空、Optional 使用不当、集合操作前未判空、链式调用中的空值
+      - 资源未关闭：数据库连接、文件流、HTTP 连接、InputStream/OutputStream 未在 finally 或 try-with-resources 中关闭
+      - 异常处理不当：空 catch 块、吞异常（catch 后无处理）、异常信息不明确、catch Exception 过于宽泛
+      - 并发问题：线程安全（共享可变状态）、死锁风险、竞态条件、SimpleDateFormat 等非线程安全类的共享使用
+      - 边界条件：空集合遍历、空字符串处理、数值溢出（int 溢出）、数组越界、分页参数为 0 或负数
+      - 类型转换错误：ClassCastException 风险、Long/Integer 拆箱 NPE、String 转数值未捕获 NumberFormatException
+      - 逻辑错误：条件判断遗漏、循环终止条件、短路求值、equals/hashCode 一致性
+      - 无界数据加载：查询未加 LIMIT、未分页的列表查询可能导致 OOM
+      - 死循环风险：while 循环退出条件是否可达、递归是否有终止条件
+
+      ── 2. 金融业务专项检查（交易系统核心） ──
+      - 资金/价格/数量计算：是否使用 BigDecimal？是否用了 double/float 做金额运算？BigDecimal 比较是否用 compareTo 而非 equals？
+      - BigDecimal 精度：除法是否指定了 scale 和 RoundingMode？是否存在 ArithmeticException 风险？
+      - 幂等性：下单、撤单、成交回调、推送等操作是否做了幂等处理？重复请求是否会产生重复数据？
+      - 订单状态机：状态流转是否合法？是否存在非法状态跳转？并发修改订单状态是否有乐观锁/悲观锁保护？
+      - 数据一致性：跨服务调用失败后是否有补偿机制？Kafka 消息消费失败是否有重试和死信队列？
+      - 费用计算：手续费、佣金计算逻辑是否正确？是否考虑了不同市场、不同产品类型的费率差异？
+      - 资金与持仓：资金变动和持仓变动是否在同一事务内？是否存在资金/持仓不一致的风险？
+
+      ── 3. 代码质量与规范 ──
+      - 命名规范：类名大驼峰、方法名小驼峰、常量全大写下划线；后缀是否符合项目规范（Controller/Service/ServiceImpl/Mapper/Entity/VO/Req/Resp/Enum/Convert/Config/Bean/Constant）
+      - 分层架构违规：Controller 是否直接调用 Mapper/DAO？Service 层是否包含 HTTP 相关逻辑（HttpServletRequest 等）？Domain 层是否依赖了 Server 层？
+      - 方法长度：单方法是否超过 60 行？嵌套深度是否超过 3 层？圈复杂度是否超过 10？
+      - 重复代码：是否存在复制粘贴的重复逻辑？是否应该抽取公共方法或工具类？
+      - 魔法值：代码中是否存在未定义为常量的硬编码数字或字符串？
+      - 注释质量：公共方法是否有 Javadoc？注释是否与代码逻辑一致（过时注释）？是否有无意义的注释？
+      - 代码可读性：变量命名是否清晰表达意图？复杂逻辑是否有必要注释？三元表达式是否过于复杂？
+      - import 规范：是否使用通配符 import *？是否有未使用的 import？
+      - 方法参数数量：建议不超过 5 个，过多应封装为对象
+      - 返回值处理：是否忽略了方法返回值？
+
+      ── 4. 安全性 ──
+      - 敏感信息泄露：密码、密钥、Token、AK/SK 是否硬编码在代码中？日志中是否打印了敏感信息（密码、完整卡号、身份证号）？
+      - SQL 注入：MyBatis 中是否使用了 \${} 拼接 SQL（应使用 #{}）？是否有手动拼接 SQL 的情况？
+      - XSS 防护：用户输入是否经过转义后再输出？接口返回的 HTML 内容是否做了 XSS 过滤？
+      - 权限校验：接口是否有适当的认证和授权注解？是否存在越权访问风险（水平越权：用户 A 访问用户 B 的数据）？
+      - 参数校验：Controller 入参是否使用了 @Valid/@Validated？必填字段是否有 @NotNull/@NotBlank？数值范围是否有 @Min/@Max？
+      - 接口安全：接口路径中是否包含 limit 关键字（AWS WAF 会拦截）？敏感操作是否有频率限制？
+      - 反序列化安全：是否使用了不安全的反序列化方式？Fastjson 是否开启了 autoType？
+      - 接口幂等性：写操作接口是否支持幂等？
+      - CSRF/CORS 配置是否合理
+
+      ── 5. 性能 ──
+      - N+1 查询：循环内是否有数据库查询或 RPC 调用？是否应该批量查询后再处理？
+      - 大数据量处理：列表查询是否有分页？批量操作是否分批处理？导出功能是否有数量限制？
+      - 缓存使用：频繁查询的数据是否使用了缓存（Redis/Caffeine）？缓存 key 设计是否合理？是否存在缓存穿透/击穿/雪崩风险？
+      - 数据库优化：新增的查询条件字段是否有索引？是否存在全表扫描风险？是否有不必要的 SELECT *？
+      - 对象创建：循环内是否频繁创建大对象？是否可以复用？StringBuilder vs String 拼接？
+      - 连接池：HTTP 客户端是否复用连接？数据库连接是否正确归还？Redis 连接池大小是否合理？
+      - 异步处理：耗时操作（发邮件、推送通知、写日志）是否使用了异步？@Async 是否配置了线程池？
+      - 集合初始化容量：HashMap/ArrayList 是否指定初始容量？频繁装箱拆箱是否可以避免？
+
+      ── 6. Spring Boot / 框架最佳实践 ──
+      - 依赖注入：是否使用构造器注入（推荐）而非 @Autowired 字段注入？是否存在循环依赖？
+      - @Transactional：是否加在 public 方法上？是否指定了 rollbackFor = Exception.class？事务方法内是否有 RPC/HTTP 外部调用（应避免长事务）？自调用是否会导致事务失效？
+      - @Async：异步方法是否在同一个类内自调用（会失效）？是否指定了线程池？是否处理了异常？
+      - RESTful 设计：HTTP 方法是否语义正确（GET 查询 / POST 创建 / PUT 修改 / DELETE 删除）？URL 路径是否清晰？
+      - Bean 作用域：是否在 Singleton Bean 中注入 Prototype Bean？
+      - 配置管理：是否使用 @ConfigurationProperties 而非大量 @Value？环境相关配置是否放在对应的 profile 文件中？敏感配置是否外部化？
+      - 异常处理：是否使用了全局异常处理（@ControllerAdvice）？自定义异常是否继承 RuntimeException 并包含错误码？
+      - 错误码规范：错误码格式是否统一？错误消息是否通过 i18n 资源文件获取而非硬编码？
+
+      ── 7. MyBatis / MyBatis-Plus 规范 ──
+      - SQL 注入风险：#{} vs \${} 的使用，\${} 仅用于表名/列名等不可参数化的场景；是否有手动拼接 SQL？
+      - Mapper 方法命名是否清晰（selectXxx、updateXxx、insertXxx、deleteXxx）
+      - 批量操作是否使用 saveBatch/updateBatchById 而非循环单条操作
+      - LambdaQueryWrapper 使用是否正确（条件拼接、链式调用）
+      - 分页查询是否使用 Page 对象
+      - 是否存在全表更新/删除风险（UPDATE/DELETE 缺少 WHERE 条件）
+      - Entity 字段类型与数据库字段类型是否匹配
+      - @TableField(exist = false) 非数据库字段是否正确标注
+      - 动态 SQL 中 foreach 批量操作是否正确？是否有未使用索引的慢查询风险？
+
+      ── 8. Kafka 消息规范 ──
+      - 消息幂等：Consumer 是否做了幂等处理？重复消费是否会产生脏数据？
+      - 消息顺序：是否依赖消息顺序？如果是，是否使用了相同的 partition key？
+      - 消费异常：消费失败是否有重试机制？是否配置了死信队列（DLQ）？
+      - 消息体大小：消息体是否过大？是否应该只传 ID 而非完整对象？
+      - 序列化：消息序列化/反序列化是否一致？版本升级是否向后兼容？
+      - 生产者：是否处理发送失败（回调、重试机制）？Topic 命名是否规范？
+
+      ── 9. Dubbo RPC 相关 ──
+      - 超时设置：Dubbo 接口是否设置了合理的 timeout？是否有默认超时兜底？
+      - 重试策略：幂等接口是否配置了 retries？非幂等接口（下单、扣款）是否设置 retries=0？
+      - 异常处理：Dubbo 调用异常是否正确捕获和处理？是否区分了业务异常和系统异常？
+      - 接口兼容：接口变更是否向后兼容？新增字段是否有默认值？
+
+      ── 10. 数据库规范 ──
+      - 表设计：新增表是否包含 id（主键）、create_time、update_time 等基础字段？
+      - SQL 规范：是否避免了超过 3 表 JOIN？事务粒度是否最小化？是否在 RPC 调用中嵌套了事务？
+      - 数据隔离：是否存在跨业务域直接访问其他域的表（包括 JOIN）？跨域交互是否通过 RPC 或 MQ？
+      - 数据库操作与缓存更新的一致性（先更新 DB 还是先更新缓存）
+      - 并发写入是否有乐观锁/悲观锁保护
+      - 关键业务操作是否有操作日志/审计日志
+
+      ── 11. API 接口设计 ──
+      - RESTful 规范（HTTP 方法语义、URL 命名、状态码使用）
+      - 请求参数校验（@NotNull、@NotBlank、@Size、@Min、@Max 等 JSR-303 注解）
+      - 响应体结构是否统一（统一返回格式、错误码规范）
+      - 接口文档注释是否完整（方法说明、参数说明、返回值说明）
+      - 分页接口是否限制最大页大小
+      - 批量接口是否限制最大数量
+
+      ── 12. 定时任务规范（XXL-Job） ──
+      - 任务是否支持幂等（重复执行不会产生副作用）
+      - 是否有超时控制和失败重试策略
+      - 大数据量任务是否分片处理
+      - 任务执行日志是否充分
+      - 是否有并发执行控制（防止同一任务重复触发）
+
+      ── 13. 日志规范 ──
+      - 是否使用 SLF4J + Logback？是否存在 System.out.println？
+      - 日志级别是否合理？DEBUG 信息是否会在生产环境输出？
+      - 异常日志是否包含完整堆栈（log.error(msg, e) 而非 log.error(e.getMessage())）？
+      - 日志中是否打印了敏感信息（密码、Token、完整手机号、身份证号）？
+      - 关键业务操作（下单、撤单、资金变动）是否有 INFO 级别日志？
+      - 是否使用占位符 {} 而非字符串拼接？
+
+      ── 14. 配置与依赖变更审查 ──
+      - application.yml/properties 变更是否合理？新增配置项是否有默认值？
+      - 敏感配置是否使用环境变量或配置中心？配置项命名是否规范（kebab-case）？
+      - 不同环境的配置差异是否处理？
+      - pom.xml：新增依赖版本是否明确指定（避免 SNAPSHOT 进入生产）？
+      - 是否引入了不必要的依赖？依赖范围（scope）是否正确（test、provided、compile）？
+      - 是否存在依赖冲突？
+
+      ═══════════════════════════════════════════
+      📝 输出格式（严格遵守）
+      ═══════════════════════════════════════════
+
+      ### 📋 审查摘要
+      [简要说明本次变更的主要内容，涉及哪些模块和功能]
+
+      ### 📊 变更统计
+      - 新增文件：X 个
+      - 修改文件：X 个
+      - 删除文件：X 个
+      - 变更代码行数：约 X 行
+
+      ### ⚠️ 发现的问题
+      按严重程度排序，每个问题必须包含：文件名、行号（如可确定）、问题描述、修复建议
+
+      🔴 **严重（必须修复）**
+      > 可能导致线上故障、数据错误、安全漏洞的问题
+
+      🟡 **中等（建议修复）**
+      > 潜在风险、性能问题、不符合规范的问题
+
+      🟢 **轻微（可选优化）**
+      > 代码风格、可读性、最佳实践建议
+
+      ### ✅ 做得好的地方
+      [列出值得肯定的改进和良好实践]
+
+      ### 💡 优化建议
+      [提供具体的改进建议，尽量附带代码示例]
+
+      ### 🎯 合并建议
+      [明确给出以下之一，并说明理由]
+      - ✅ 建议合并：代码质量良好，无严重问题
+      - ⚠️ 建议修改后合并：存在需要修复的问题，但不影响核心功能
+      - ❌ 不建议合并：存在严重问题，可能导致线上故障或数据错误")
+      
+      # 去除 ANSI 转义码（颜色代码）
+      REVIEW_OUTPUT=$(echo "${REVIEW_OUTPUT_RAW}" | sed 's/\x1b\[[0-9;]*m//g')
+      
+      echo "代码审查结果:"
+      echo "${REVIEW_OUTPUT}"
+      
+      # 将审查结果保存到临时文件，避免转义问题
+      REVIEW_FILE="/tmp/${UNIQUE_ID}_review.txt"
+      echo "## 🤖 自动代码审查报告" > ${REVIEW_FILE}
+      echo "" >> ${REVIEW_FILE}
+      echo "${REVIEW_OUTPUT}" >> ${REVIEW_FILE}
+      echo "" >> ${REVIEW_FILE}
+      echo "---" >> ${REVIEW_FILE}
+      echo "*此评论由 GitLab CI 自动生成*" >> ${REVIEW_FILE}
+      
+      # 使用 jq 正确转义 JSON，避免特殊字符问题
+      COMMENT_JSON=$(jq -n --rawfile content ${REVIEW_FILE} '{body: $content}')
+      
+      # 构建 API URL
+      API_URL="http://16.162.217.191:8888/api/v4/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes"
+      
+      echo "准备发送评论到 MR..."
+      echo "API URL: ${API_URL}"
+      
+      # 使用 GitLab API 添加评论并输出结果
+      echo "正在调用 GitLab API..."
+      CURL_RESPONSE=$(curl -w "\nHTTP_STATUS:%{http_code}" --request POST \
+        --header "PRIVATE-TOKEN: ${PC_GITLAB_TOKEN}" \
+        --header "Content-Type: application/json" \
+        --data "${COMMENT_JSON}" \
+        "${API_URL}")
+      
+      echo "API 响应 :"
+      echo "${CURL_RESPONSE}"
+      
+      # 发送审查结果到飞书机器人
+      if [ -n "${LARK_BOT_REVIEW_IDS}" ]; then
+        echo "正在发送通知到飞书机器人..."
+        LARK_URL="https://open.feishu.cn/open-apis/bot/v2/hook/${LARK_BOT_REVIEW_IDS}"
+      
+        # 构建飞书消息（使用 Markdown 格式）
+        MR_URL="${CI_PROJECT_URL}/-/merge_requests/${CI_MERGE_REQUEST_IID}"
+        LARK_MESSAGE=$(jq -n \
+          --arg title "🤖 代码审查报告 - MR #${CI_MERGE_REQUEST_IID}" \
+          --arg mr_info "**MR**: [${SOURCE_BRANCH} → ${TARGET_BRANCH}](${MR_URL})" \
+          --rawfile review ${REVIEW_FILE} \
+          '{
+            msg_type: "interactive",
+            card: {
+              header: {
+                title: {
+                  tag: "plain_text",
+                  content: $title
+                },
+                template: "blue"
+              },
+              elements: [
+                {
+                  tag: "markdown",
+                  content: $mr_info
+                },
+                {
+                  tag: "hr"
+                },
+                {
+                  tag: "markdown",
+                  content: $review
+                }
+              ]
+            }
+          }')
+      
+        echo "飞书消息内容:"
+        echo "${LARK_MESSAGE}"
+      
+        # 发送到飞书
+        LARK_RESPONSE=$(curl -w "\nHTTP_STATUS:%{http_code}" --request POST \
+          --header "Content-Type: application/json" \
+          --data "${LARK_MESSAGE}" \
+          "${LARK_URL}")
+      
+        echo "飞书 API 响应:"
+        echo "${LARK_RESPONSE}"
+      else
+        echo "未配置 LARK_BOT_REVIEW_IDS，跳过飞书通知"
+      fi
+      
+      # 清理临时文件
+      rm -f ${DIFF_FILE} ${REVIEW_FILE}
+      
+      echo "代码审查完成"
