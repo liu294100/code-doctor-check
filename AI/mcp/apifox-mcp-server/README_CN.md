@@ -50,8 +50,8 @@ pip install apifox-mcp-server
 ### 从源码安装
 
 ```bash
-git clone https://github.com/apifox/apifox-mcp-server.git
-cd apifox-mcp-server
+git clone https://github.com/liu294100/code-doctor-skills.git
+cd AI/mcp/apifox-mcp-server/
 pip install -e .
 ```
 
